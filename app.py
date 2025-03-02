@@ -54,6 +54,14 @@ def update_status(intervention_id):
         return jsonify({'success': True})
     return jsonify({'success': False}), 404
 
+# Route pour supprimer une intervention
+@app.route('/delete_intervention/<int:intervention_id>', methods=['POST'])
+def delete_intervention(intervention_id):
+    if 0 <= intervention_id < len(interventions):
+        del interventions[intervention_id]
+        return jsonify({'success': True})
+    return jsonify({'success': False}), 404
+
 # Template principal
 template = """
 <!DOCTYPE html>
@@ -170,6 +178,36 @@ template = """
             background: var(--primary);
         }
         
+        .filter-buttons {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .filter-btn {
+            padding: 0.5rem 1.5rem;
+            border: none;
+            border-radius: 25px;
+            background: var(--white);
+            color: var(--secondary);
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .filter-btn.active {
+            background: var(--secondary);
+            color: var(--white);
+        }
+
+        .filter-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        }
+        
         .cards-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -240,6 +278,14 @@ template = """
             padding: 0.5rem 1rem;
         }
         
+        .btn-danger {
+            background: #dc3545 !important;
+        }
+
+        .btn-danger:hover {
+            background: #c82333 !important;
+        }
+        
         .status-badge {
             display: inline-block;
             padding: 0.5rem 1rem;
@@ -280,6 +326,15 @@ template = """
         .notification.error {
             background: #f44336;
         }
+
+        .intervention-card {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .intervention-card.hidden {
+            display: none;
+        }
         
         @keyframes slideIn {
             from {
@@ -290,6 +345,15 @@ template = """
                 transform: translateX(0);
                 opacity: 1;
             }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .intervention-card {
+            animation: fadeIn 0.5s ease-out;
         }
         
         @media (max-width: 768px) {
@@ -330,10 +394,26 @@ template = """
     </div>
     
     <div class="container">
-        <h2 class="section-title">Interventions en cours</h2>
+        <h2 class="section-title">Interventions</h2>
+        
+        <div class="filter-buttons">
+            <button class="filter-btn active" data-filter="all">
+                <i class="fas fa-list"></i> Toutes
+            </button>
+            <button class="filter-btn" data-filter="en-cours">
+                <i class="fas fa-clock"></i> En cours
+            </button>
+            <button class="filter-btn" data-filter="termine">
+                <i class="fas fa-check"></i> Terminées
+            </button>
+            <button class="btn btn-danger" id="deleteAllCompleted">
+                <i class="fas fa-trash"></i> Supprimer les terminées
+            </button>
+        </div>
+
         <div class="cards-grid">
             {% for intervention in interventions %}
-            <div class="card" data-id="{{ loop.index0 }}">
+            <div class="card intervention-card" data-id="{{ loop.index0 }}" data-status="{{ intervention.statut.lower() }}">
                 <h3>
                     {% if intervention.type == "Incendie" %}
                         <i class="fas fa-fire"></i>
@@ -360,6 +440,10 @@ template = """
                 <button class="btn btn-termine" onclick="terminerIntervention({{ loop.index0 }})">
                     <i class="fas fa-check"></i> Marquer comme terminée
                 </button>
+                {% else %}
+                <button class="btn btn-danger" onclick="supprimerIntervention({{ loop.index0 }})">
+                    <i class="fas fa-trash"></i> Supprimer
+                </button>
                 {% endif %}
             </div>
             {% endfor %}
@@ -384,6 +468,66 @@ template = """
     </div>
     
     <script>
+        // Fonction de filtrage
+        function filterInterventions(status) {
+            const cards = document.querySelectorAll('.intervention-card');
+            cards.forEach(card => {
+                if (status === 'all' || card.dataset.status === status) {
+                    card.classList.remove('hidden');
+                } else {
+                    card.classList.add('hidden');
+                }
+            });
+        }
+
+        // Gestionnaire des boutons de filtrage
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                filterInterventions(btn.dataset.filter);
+            });
+        });
+
+        // Fonction de suppression d'une intervention
+        function supprimerIntervention(id) {
+            if (confirm('Êtes-vous sûr de vouloir supprimer cette intervention ?')) {
+                fetch(`/delete_intervention/${id}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const card = document.querySelector(`.card[data-id="${id}"]`);
+                        card.style.animation = 'fadeOut 0.3s ease-out';
+                        setTimeout(() => {
+                            card.remove();
+                        }, 300);
+                        showNotification('Intervention supprimée !', 'success');
+                    }
+                })
+                .catch(error => {
+                    console.error('Erreur:', error);
+                    showNotification('Erreur lors de la suppression.', 'error');
+                });
+            }
+        }
+
+        // Fonction pour supprimer toutes les interventions terminées
+        document.getElementById('deleteAllCompleted').addEventListener('click', function() {
+            if (confirm('Êtes-vous sûr de vouloir supprimer toutes les interventions terminées ?')) {
+                const terminatedCards = document.querySelectorAll('.intervention-card[data-status="terminée"]');
+                terminatedCards.forEach(card => {
+                    const id = card.dataset.id;
+                    supprimerIntervention(id);
+                });
+            }
+        });
+
+        // Fonction pour terminer une intervention
         function terminerIntervention(id) {
             if (confirm('Êtes-vous sûr de vouloir marquer cette intervention comme terminée ?')) {
                 fetch(`/update_status/${id}`, {
@@ -403,8 +547,14 @@ template = """
                         statusBadge.classList.add('status-termine');
                         statusBadge.innerHTML = '<i class="fas fa-circle"></i> Terminée';
                         
+                        card.dataset.status = 'terminée';
+                        
                         if (button) {
-                            button.remove();
+                            button.outerHTML = `
+                                <button class="btn btn-danger" onclick="supprimerIntervention(${id})">
+                                    <i class="fas fa-trash"></i> Supprimer
+                                </button>
+                            `;
                         }
                         
                         showNotification('Intervention marquée comme terminée !', 'success');
@@ -416,7 +566,7 @@ template = """
                 });
             }
         }
-        
+
         function showNotification(message, type = 'success') {
             const notification = document.createElement('div');
             notification.className = `notification ${type}`;
