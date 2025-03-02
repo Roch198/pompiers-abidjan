@@ -1,9 +1,15 @@
-from flask import Flask, render_template_string, request, redirect, url_for
+from flask import Flask, render_template_string, request, redirect, url_for, send_from_directory
 from datetime import datetime
+import os
 
 app = Flask(__name__)
 
-# Données simulées (pour éviter d'utiliser une base de données)
+# Route pour servir les fichiers statiques
+@app.route('/static/<path:path>')
+def send_static(path):
+    return send_from_directory('static', path)
+
+# Données simulées
 interventions = [
     {
         "type": "Incendie",
@@ -330,14 +336,14 @@ template = """
         </div>
     </div>
     
-    <footer class="footer">
-        <p>&copy; 2024 Sapeurs-Pompiers d'Abidjan. Tous droits réservés.</p>
-    </footer>
-
     <div id="installPWA">
         <i class="fas fa-download"></i> Installer l'application
     </div>
-
+    
+    <footer class="footer">
+        <p>&copy; 2024 Sapeurs-Pompiers d'Abidjan. Tous droits réservés.</p>
+    </footer>
+    
     <script>
         // Service Worker Registration
         if ('serviceWorker' in navigator) {
@@ -561,4 +567,4 @@ def urgence():
     return render_template_string(form_template)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True) 
+    app.run(host='0.0.0.0', port=8080, debug=True)
