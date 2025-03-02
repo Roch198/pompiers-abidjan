@@ -1,13 +1,14 @@
-from flask import Flask, render_template_string, request, redirect, url_for, send_from_directory
+from flask import Flask, render_template_string, request, redirect, url_for, send_from_directory, jsonify
 from datetime import datetime
 import os
 
 app = Flask(__name__)
 
-# Route pour servir les fichiers statiques
-@app.route('/static/<path:path>')
-def send_static(path):
-    return send_from_directory('static', path)
+# Configuration du dossier pour les uploads
+UPLOAD_FOLDER = 'static/uploads'
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Données simulées
 interventions = [
@@ -15,13 +16,15 @@ interventions = [
         "type": "Incendie",
         "lieu": "Cocody, Rue des Jardins",
         "statut": "En cours",
-        "date": datetime.now().strftime("%d/%m/%Y %H:%M")
+        "date": datetime.now().strftime("%d/%m/%Y %H:%M"),
+        "photo": None
     },
     {
         "type": "Accident",
         "lieu": "Plateau, Avenue Chardy",
         "statut": "Terminé",
-        "date": datetime.now().strftime("%d/%m/%Y %H:%M")
+        "date": datetime.now().strftime("%d/%m/%Y %H:%M"),
+        "photo": None
     }
 ]
 
@@ -38,7 +41,20 @@ casernes = [
     }
 ]
 
-# Template HTML intégré avec design amélioré
+# Route pour servir les fichiers statiques
+@app.route('/static/<path:path>')
+def send_static(path):
+    return send_from_directory('static', path)
+
+# Route pour mettre à jour le statut d'une intervention
+@app.route('/update_status/<int:intervention_id>', methods=['POST'])
+def update_status(intervention_id):
+    if 0 <= intervention_id < len(interventions):
+        interventions[intervention_id]['statut'] = "Terminée"
+        return jsonify({'success': True})
+    return jsonify({'success': False}), 404
+
+# Template principal
 template = """
 <!DOCTYPE html>
 <html lang="fr">
@@ -184,6 +200,19 @@ template = """
             margin: 0.5rem 0;
         }
         
+        .intervention-photo {
+            margin: 1rem 0;
+            border-radius: 8px;
+            overflow: hidden;
+            max-height: 200px;
+        }
+        
+        .intervention-photo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
         .btn {
             display: inline-block;
             background: var(--primary);
@@ -195,12 +224,20 @@ template = """
             font-weight: 500;
             text-decoration: none;
             transition: all 0.3s ease;
+            cursor: pointer;
             box-shadow: 0 4px 15px rgba(230, 57, 70, 0.3);
         }
         
         .btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(230, 57, 70, 0.4);
+        }
+        
+        .btn-termine {
+            background: #4CAF50;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            padding: 0.5rem 1rem;
         }
         
         .status-badge {
@@ -217,27 +254,42 @@ template = """
         }
         
         .status-termine {
-            background: #4caf50;
+            background: #4CAF50;
             color: white;
         }
         
-        .contact-info {
+        .notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 1rem 2rem;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
             display: flex;
             align-items: center;
-            margin: 0.5rem 0;
+            gap: 10px;
+            animation: slideIn 0.3s ease-out;
+            z-index: 1000;
         }
         
-        .contact-info i {
-            margin-right: 0.5rem;
-            color: var(--primary);
+        .notification.success {
+            background: #4CAF50;
         }
         
-        .footer {
-            background: var(--secondary);
-            color: var(--white);
-            text-align: center;
-            padding: 2rem;
-            margin-top: 4rem;
+        .notification.error {
+            background: #f44336;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
         }
         
         @media (max-width: 768px) {
@@ -256,21 +308,6 @@ template = """
             .cards-grid {
                 grid-template-columns: 1fr;
             }
-        }
-        
-        /* Styles pour l'installation PWA */
-        #installPWA {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: var(--secondary);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 25px;
-            display: none;
-            z-index: 1000;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
     </style>
 </head>
@@ -296,7 +333,7 @@ template = """
         <h2 class="section-title">Interventions en cours</h2>
         <div class="cards-grid">
             {% for intervention in interventions %}
-            <div class="card">
+            <div class="card" data-id="{{ loop.index0 }}">
                 <h3>
                     {% if intervention.type == "Incendie" %}
                         <i class="fas fa-fire"></i>
@@ -307,6 +344,11 @@ template = """
                     {% endif %}
                     {{ intervention.type }}
                 </h3>
+                {% if intervention.photo %}
+                <div class="intervention-photo">
+                    <img src="{{ intervention.photo }}" alt="Photo de l'urgence">
+                </div>
+                {% endif %}
                 <p><i class="fas fa-map-marker-alt"></i> {{ intervention.lieu }}</p>
                 <p>
                     <span class="status-badge {% if intervention.statut == 'En cours' %}status-en-cours{% else %}status-termine{% endif %}">
@@ -314,6 +356,11 @@ template = """
                     </span>
                 </p>
                 <p><i class="far fa-clock"></i> {{ intervention.date }}</p>
+                {% if intervention.statut == 'En cours' %}
+                <button class="btn btn-termine" onclick="terminerIntervention({{ loop.index0 }})">
+                    <i class="fas fa-check"></i> Marquer comme terminée
+                </button>
+                {% endif %}
             </div>
             {% endfor %}
         </div>
@@ -336,49 +383,53 @@ template = """
         </div>
     </div>
     
-    <div id="installPWA">
-        <i class="fas fa-download"></i> Installer l'application
-    </div>
-    
-    <footer class="footer">
-        <p>&copy; 2024 Sapeurs-Pompiers d'Abidjan. Tous droits réservés.</p>
-    </footer>
-    
     <script>
-        // Service Worker Registration
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/static/sw.js')
-                    .then(registration => {
-                        console.log('ServiceWorker registration successful');
-                    })
-                    .catch(err => {
-                        console.log('ServiceWorker registration failed: ', err);
-                    });
-            });
-        }
-
-        // PWA Installation
-        let deferredPrompt;
-        const installButton = document.getElementById('installPWA');
-
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredPrompt = e;
-            installButton.style.display = 'block';
-        });
-
-        installButton.addEventListener('click', async () => {
-            if (deferredPrompt) {
-                deferredPrompt.prompt();
-                const { outcome } = await deferredPrompt.userChoice;
-                if (outcome === 'accepted') {
-                    console.log('Application installée');
-                }
-                deferredPrompt = null;
-                installButton.style.display = 'none';
+        function terminerIntervention(id) {
+            if (confirm('Êtes-vous sûr de vouloir marquer cette intervention comme terminée ?')) {
+                fetch(`/update_status/${id}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const card = document.querySelector(`.card[data-id="${id}"]`);
+                        const statusBadge = card.querySelector('.status-badge');
+                        const button = card.querySelector('.btn-termine');
+                        
+                        statusBadge.classList.remove('status-en-cours');
+                        statusBadge.classList.add('status-termine');
+                        statusBadge.innerHTML = '<i class="fas fa-circle"></i> Terminée';
+                        
+                        if (button) {
+                            button.remove();
+                        }
+                        
+                        showNotification('Intervention marquée comme terminée !', 'success');
+                    }
+                })
+                .catch(error => {
+                    console.error('Erreur:', error);
+                    showNotification('Erreur lors de la mise à jour du statut.', 'error');
+                });
             }
-        });
+        }
+        
+        function showNotification(message, type = 'success') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.innerHTML = `
+                <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i>
+                ${message}
+            `;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
     </script>
 </body>
 </html>
@@ -391,11 +442,20 @@ def accueil():
 @app.route('/urgence', methods=['GET', 'POST'])
 def urgence():
     if request.method == 'POST':
+        photo = None
+        if 'photo' in request.files:
+            file = request.files['photo']
+            if file.filename != '':
+                filename = f"urgence_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                photo = f"/static/uploads/{filename}"
+
         nouvelle_urgence = {
             "type": request.form.get('type'),
             "lieu": request.form.get('lieu'),
             "statut": "En cours",
-            "date": datetime.now().strftime("%d/%m/%Y %H:%M")
+            "date": datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "photo": photo
         }
         interventions.insert(0, nouvelle_urgence)
         return redirect(url_for('accueil'))
@@ -484,6 +544,54 @@ def urgence():
                 border-color: var(--primary);
             }
             
+            .photo-preview {
+                max-width: 100%;
+                height: 200px;
+                border: 2px dashed #ddd;
+                border-radius: 8px;
+                margin-top: 10px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+                position: relative;
+            }
+            
+            .photo-preview img {
+                max-width: 100%;
+                max-height: 100%;
+                object-fit: contain;
+            }
+            
+            .photo-preview.empty {
+                background: #f8f9fa;
+            }
+            
+            .photo-preview.empty::after {
+                content: 'Aperçu de la photo';
+                color: #666;
+                font-size: 0.9rem;
+            }
+            
+            .photo-input {
+                display: none;
+            }
+            
+            .photo-label {
+                display: inline-block;
+                padding: 0.8rem 1.5rem;
+                background: var(--secondary);
+                color: white;
+                border-radius: 8px;
+                cursor: pointer;
+                margin-top: 0.5rem;
+                transition: all 0.3s ease;
+            }
+            
+            .photo-label:hover {
+                background: #2a4a73;
+            }
+            
             .btn {
                 display: inline-block;
                 background: var(--primary);
@@ -536,7 +644,7 @@ def urgence():
                 <i class="fas fa-exclamation-triangle"></i>
             </div>
             <h2 class="form-title">Formulaire d'Urgence</h2>
-            <form method="POST">
+            <form method="POST" enctype="multipart/form-data">
                 <div class="form-group">
                     <label><i class="fas fa-list"></i> Type d'urgence:</label>
                     <select name="type" required>
@@ -545,6 +653,15 @@ def urgence():
                         <option value="Secours">Secours à personne</option>
                         <option value="Autre">Autre</option>
                     </select>
+                </div>
+                
+                <div class="form-group">
+                    <label><i class="fas fa-camera"></i> Photo de l'urgence:</label>
+                    <input type="file" name="photo" id="photo" class="photo-input" accept="image/*" capture="environment">
+                    <label for="photo" class="photo-label">
+                        <i class="fas fa-camera"></i> Prendre une photo
+                    </label>
+                    <div class="photo-preview empty" id="photoPreview"></div>
                 </div>
                 
                 <div class="form-group">
@@ -561,6 +678,26 @@ def urgence():
                 </a>
             </form>
         </div>
+        
+        <script>
+            const photoInput = document.getElementById('photo');
+            const photoPreview = document.getElementById('photoPreview');
+            
+            photoInput.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        photoPreview.innerHTML = `<img src="${e.target.result}" alt="Aperçu">`;
+                        photoPreview.classList.remove('empty');
+                    }
+                    reader.readAsDataURL(file);
+                } else {
+                    photoPreview.innerHTML = '';
+                    photoPreview.classList.add('empty');
+                }
+            });
+        </script>
     </body>
     </html>
     """
