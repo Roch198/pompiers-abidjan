@@ -128,7 +128,7 @@ template = """
             left: 0;
             width: 100%;
             height: 100%;
-            background: url('https://images.unsplash.com/photo-1582152629442-4a864303fb96?auto=format&fit=crop&w=1920&q=80') center/cover;
+            background: url('https://th.bing.com/th/id/OIP.ORiy4tu0gM1bdUc3T7Fy9AHaFD?rs=1&pid=ImgDetMain') center/cover;
             opacity: 0.2;
         }
         
@@ -399,12 +399,6 @@ template = """
         <div class="filter-buttons">
             <button class="filter-btn active" data-filter="all">
                 <i class="fas fa-list"></i> Toutes
-            </button>
-            <button class="filter-btn" data-filter="en-cours">
-                <i class="fas fa-clock"></i> En cours
-            </button>
-            <button class="filter-btn" data-filter="termine">
-                <i class="fas fa-check"></i> Terminées
             </button>
             <button class="btn btn-danger" id="deleteAllCompleted">
                 <i class="fas fa-trash"></i> Supprimer les terminées
